@@ -56,27 +56,40 @@ STATUS_TEXT = {"green": "GOOD", "yellow": "LOW QUALITY", "red": "URGENT"}
 
 
 # ============================================================
-# Safety monitor: raises alerts when someone may need help
-#   urgent = possible fall (upright -> horizontal fast, then stays still)
+# Safety monitor: raises alerts when someone may be hurting themselves
+# MID-EXERCISE. It only watches while the recogniser says a person is
+# exercising (locked on an exercise and still moving like it).
+#   urgent = sharp movement, or a possible fall (upright -> horizontal
+#            fast, then stays still)
 #   help   = stuck at the bottom of a rep for too long
-#   check  = main joint angle changed suspiciously fast
+# "Sharp" is judged by speed: main joint angle, torso lean and hip movement.
+# The screen shows a "sharp" percentage where 100% = alert. Do normal reps,
+# then fake a fall, watch the numbers and set the limits in between.
 # Hip movement is divided by torso length, so distance from the camera
 # does not matter. All numbers are starting points - tune with real tests.
 # ============================================================
 
+# ---- when to watch ----
+EXERCISE_GRACE = 1.0     # keep watching this long after the "exercising" state drops
+                         # (a fall can break the exercise pattern a moment before we react)
+
+# ---- sharp movement (only checked while exercising) ----
+SPEED_SPAN = 0.15        # compare the body now with this many seconds ago
+MIN_HOT_FRAMES = 2       # over the limit for this many frames in a row (ignores 1-frame glitches)
+MAIN_ANGLE_SPEED = {"squat": 250, "pushup": 250, "curl": 320}   # degrees/second
+LEAN_SPEED = 120         # degrees/second - torso tipping or swinging
+HIP_SPEED = 1.5          # torso lengths per second - hips moving fast
+SHARP_LEVEL = "urgent"   # "urgent" = red box, "help" = yellow box
+
 # ---- fall detection ----
 FALL_WINDOW = 1.0        # a fall must happen within this many seconds
 UPRIGHT_LEAN = 35        # torso lean below this counts as upright
-FALLEN_LEAN = 60         # torso lean above this counts as horizontal
-LEAN_JUMP = 40           # lean must increase by this much inside FALL_WINDOW
-HIP_DROP = 0.5           # hip must drop this many torso lengths inside FALL_WINDOW
+FALLEN_LEAN = 55         # torso lean above this counts as horizontal
+LEAN_JUMP = 30           # lean must increase by this much inside FALL_WINDOW
+HIP_DROP = 0.35          # hip must drop this many torso lengths inside FALL_WINDOW
 CONFIRM_STILL = 2.0      # must stay still this long to confirm the fall
 STILL_MOVE = 0.25        # hip range (torso lengths) below this means "still"
 SUSPECT_TIMEOUT = 8.0    # give up on a suspected fall after this long
-
-# ---- sudden angle change ----
-ANGLE_SPAN = 0.2         # compare the angle now with this many seconds ago
-ANGLE_SPEED = 600        # degrees per second that counts as "too fast"
 
 # ---- stuck mid-rep ----
 STUCK_SECONDS = 8.0      # rep counter in DOWN longer than this
@@ -96,10 +109,22 @@ class SafetyMonitor:
         self.suspect_since = None    # time a fall was suspected
         self.down_since = None       # time the rep counter entered DOWN
         self.last_alert = {}
+        self.last_active = -1e9      # last time the person was exercising
+        self.last_exercise = None
+        self.active = False          # True while we are watching (exercising)
+        self.hot_frames = 0          # frames in a row over the sharp limit
+        self.sharp_now = 0.0         # speed as a fraction of the limit (1.0 = alert)
+        self.sharp_peak = 0.0        # highest value in the last few seconds (for tuning)
+        self.peak_time = 0.0
 
     # ------------------------------------------------------------
-    def update(self, t, points, f, exercise, rep_state):
-        """Call once per frame when a person is visible. Returns an alert dict or None."""
+    def update(self, t, points, f, exercise, exercising, rep_state):
+        """Call once per frame when a person is visible. Returns an alert dict or None.
+
+        exercise   - name of the locked exercise, or None
+        exercising - True while the person is actually doing the exercise
+        rep_state  - "UP" / "DOWN" from that exercise's rep counter, or None
+        """
         sx, sy = points["shoulder"]
         hx, hy = points["hip"]
         torso = math.hypot(sx - hx, sy - hy)
@@ -113,14 +138,23 @@ class SafetyMonitor:
         while self.hist and t - self.hist[0][0] > HISTORY_SECONDS:
             self.hist.popleft()
 
-        for check in (self._check_fall, self._check_fast_angle, self._check_stuck):
-            alert = check(t, exercise, rep_state)
+        if exercising:
+            self.last_active = t
+            self.last_exercise = exercise
+        self.active = exercising or (t - self.last_active < EXERCISE_GRACE)
+
+        self._measure_sharpness(t)
+        for check in (self._check_fall, self._check_sharp, self._check_stuck):
+            alert = check(t, rep_state)
             if alert:
                 return alert
         return None
 
     def update_no_person(self, t):
         """Call when nobody is visible. A fall can push the person out of view."""
+        self.active = False
+        self.sharp_now = 0.0
+        self.hot_frames = 0
         self.down_since = None
         if self.suspect_since is not None and t - self.suspect_since >= CONFIRM_STILL:
             self.suspect_since = None
@@ -128,10 +162,39 @@ class SafetyMonitor:
         return None
 
     # ------------------------------------------------------------
-    def _check_fall(self, t, exercise, rep_state):
+    def _measure_sharpness(self, t):
+        """Set self.sharp_now: how fast the body moves compared with the limits."""
+        ratio = 0.0
+        now = self.hist[-1]
+        old = None
+        for h in reversed(self.hist):
+            if t - h[0] >= SPEED_SPAN:
+                old = h
+                break
+        if old is not None and self.active:
+            dt = max(now[0] - old[0], 1e-6)
+            ratio = max(abs(now[1] - old[1]) / dt / LEAN_SPEED,
+                        math.hypot(now[2] - old[2], now[3] - old[3]) / dt / HIP_SPEED)
+            index = MAIN_ANGLE_INDEX.get(self.last_exercise)
+            if index is not None:
+                limit = MAIN_ANGLE_SPEED[self.last_exercise]
+                ratio = max(ratio, abs(now[index] - old[index]) / dt / limit)
+        self.sharp_now = ratio
+        if ratio >= self.sharp_peak or t - self.peak_time > 3.0:
+            self.sharp_peak, self.peak_time = ratio, t
+        self.hot_frames = self.hot_frames + 1 if ratio >= 1.0 else 0
+
+    def _check_sharp(self, t, rep_state):
+        if self.hot_frames >= MIN_HOT_FRAMES:
+            return self._alert(t, SHARP_LEVEL, "sharp", "Sharp movement - check now")
+        return None
+
+    def _check_fall(self, t, rep_state):
         now = self.hist[-1]
 
         if self.suspect_since is None:
+            if not self.active:          # only look for falls mid-exercise
+                return None
             recent = [h for h in self.hist if t - h[0] <= FALL_WINDOW]
             if len(recent) < 5:
                 return None
@@ -154,21 +217,7 @@ class SafetyMonitor:
                 return self._alert(t, "urgent", "fall", "Possible fall - check now")
         return None
 
-    def _check_fast_angle(self, t, exercise, rep_state):
-        index = MAIN_ANGLE_INDEX.get(exercise)
-        if index is None:
-            return None
-        now = self.hist[-1]
-        old = min((h for h in self.hist if t - h[0] >= ANGLE_SPAN),
-                  key=lambda h: abs((t - h[0]) - ANGLE_SPAN), default=None)
-        if old is None:
-            return None
-        speed = abs(now[index] - old[index]) / max(now[0] - old[0], 1e-6)
-        if speed > ANGLE_SPEED:
-            return self._alert(t, "check", "fast_angle", "Sudden movement")
-        return None
-
-    def _check_stuck(self, t, exercise, rep_state):
+    def _check_stuck(self, t, rep_state):
         if rep_state != "DOWN":
             self.down_since = None
             return None
@@ -271,7 +320,7 @@ def draw_status_box(frame, session):
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_colour, 1)
 
 
-def draw_panel(frame, session, recognizer, features, fps, now):
+def draw_panel(frame, session, recognizer, features, fps, now, safety):
     cv2.rectangle(frame, (0, 0), (360, 215), DARK, -1)
     current = recognizer.current
     title = DISPLAY_NAMES[current] if current else "Detecting..."
@@ -294,6 +343,10 @@ def draw_panel(frame, session, recognizer, features, fps, now):
     cv2.putText(frame, info, (10, y + 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, WHITE, 2)
     cv2.putText(frame, f"FPS: {fps:.0f}", (10, y + 36),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, WHITE, 2)
+    watch = "ON" if safety.active else "off"
+    cv2.putText(frame, f"Safety {watch}  sharp {safety.sharp_now * 100:.0f}%  "
+                f"peak {safety.sharp_peak * 100:.0f}%",
+                (10, y + 62), cv2.FONT_HERSHEY_SIMPLEX, 0.55, WHITE, 2)
 
     if session.feedback and now < session.feedback_until:
         text, colour = session.feedback
@@ -382,8 +435,11 @@ def main():
                 change = recognizer.update(now, features)
                 rep_state = (counters[recognizer.current].state
                              if recognizer.current else None)
+                # exercising = locked on an exercise AND still moving like it
+                exercising = (recognizer.current is not None
+                              and recognizer.idle_since is None)
                 alert = safety.update(now, points, features,
-                                      recognizer.current, rep_state)
+                                      recognizer.current, exercising, rep_state)
                 draw_body(frame, points, features)
 
             if alert:
@@ -411,7 +467,7 @@ def main():
             prev_time = now
 
             session.update_status(now)
-            draw_panel(frame, session, recognizer, features, fps, now)
+            draw_panel(frame, session, recognizer, features, fps, now, safety)
             draw_status_box(frame, session)
             cv2.imshow("ECE 198 Exercise Tracker", frame)
 
