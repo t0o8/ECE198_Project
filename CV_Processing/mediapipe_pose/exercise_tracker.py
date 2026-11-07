@@ -11,7 +11,9 @@ For push-ups, put the laptop low (on the floor or a chair).
 Controls (click the video window first):  q = quit   r = reset
 """
 
+import math
 import time
+from collections import deque
 
 import cv2
 import mediapipe as mp
@@ -40,6 +42,147 @@ RED = (50, 50, 230)
 WHITE = (255, 255, 255)
 YELLOW = (0, 220, 255)
 DARK = (40, 40, 40)
+ORANGE = (0, 140, 255)
+ALERT_SECONDS = 5.0      # how long an alert banner stays on screen
+ALERT_COLOURS = {"urgent": RED, "help": ORANGE, "check": YELLOW}
+
+# Status box (the green / yellow / red box for this station)
+STATION_NUMBER = 1
+STATUS_HOLD_SECONDS = 10.0   # an urgent / help alert keeps the box red / yellow this long
+RECENT_REPS = 3              # look at the last few reps ...
+BAD_FOR_YELLOW = 2           # ... and go yellow if this many were bad
+STATUS_COLOURS = {"green": GREEN, "yellow": YELLOW, "red": RED}
+STATUS_TEXT = {"green": "GOOD", "yellow": "LOW QUALITY", "red": "URGENT"}
+
+
+# ============================================================
+# Safety monitor: raises alerts when someone may need help
+#   urgent = possible fall (upright -> horizontal fast, then stays still)
+#   help   = stuck at the bottom of a rep for too long
+#   check  = main joint angle changed suspiciously fast
+# Hip movement is divided by torso length, so distance from the camera
+# does not matter. All numbers are starting points - tune with real tests.
+# ============================================================
+
+# ---- fall detection ----
+FALL_WINDOW = 1.0        # a fall must happen within this many seconds
+UPRIGHT_LEAN = 35        # torso lean below this counts as upright
+FALLEN_LEAN = 60         # torso lean above this counts as horizontal
+LEAN_JUMP = 40           # lean must increase by this much inside FALL_WINDOW
+HIP_DROP = 0.5           # hip must drop this many torso lengths inside FALL_WINDOW
+CONFIRM_STILL = 2.0      # must stay still this long to confirm the fall
+STILL_MOVE = 0.25        # hip range (torso lengths) below this means "still"
+SUSPECT_TIMEOUT = 8.0    # give up on a suspected fall after this long
+
+# ---- sudden angle change ----
+ANGLE_SPAN = 0.2         # compare the angle now with this many seconds ago
+ANGLE_SPEED = 600        # degrees per second that counts as "too fast"
+
+# ---- stuck mid-rep ----
+STUCK_SECONDS = 8.0      # rep counter in DOWN longer than this
+
+COOLDOWN = 10.0          # do not repeat the same alert more often than this
+HISTORY_SECONDS = 3.0
+
+# which measurement to watch for each exercise (index into the history tuple)
+_KNEE, _ELBOW = 4, 5
+MAIN_ANGLE_INDEX = {"squat": _KNEE, "pushup": _ELBOW, "curl": _ELBOW}
+
+
+class SafetyMonitor:
+    def __init__(self):
+        self.hist = deque()          # (t, lean, hip_x, hip_y, knee, elbow)
+        self.ref_len = None          # smoothed torso length in pixels
+        self.suspect_since = None    # time a fall was suspected
+        self.down_since = None       # time the rep counter entered DOWN
+        self.last_alert = {}
+
+    # ------------------------------------------------------------
+    def update(self, t, points, f, exercise, rep_state):
+        """Call once per frame when a person is visible. Returns an alert dict or None."""
+        sx, sy = points["shoulder"]
+        hx, hy = points["hip"]
+        torso = math.hypot(sx - hx, sy - hy)
+        if torso > 1:
+            self.ref_len = torso if self.ref_len is None else 0.99 * self.ref_len + 0.01 * torso
+        if not self.ref_len:
+            return None
+
+        self.hist.append((t, f["torso_lean"], hx / self.ref_len, hy / self.ref_len,
+                          f["knee"], f["elbow"]))
+        while self.hist and t - self.hist[0][0] > HISTORY_SECONDS:
+            self.hist.popleft()
+
+        for check in (self._check_fall, self._check_fast_angle, self._check_stuck):
+            alert = check(t, exercise, rep_state)
+            if alert:
+                return alert
+        return None
+
+    def update_no_person(self, t):
+        """Call when nobody is visible. A fall can push the person out of view."""
+        self.down_since = None
+        if self.suspect_since is not None and t - self.suspect_since >= CONFIRM_STILL:
+            self.suspect_since = None
+            return self._alert(t, "urgent", "fall", "Possible fall (lost sight)")
+        return None
+
+    # ------------------------------------------------------------
+    def _check_fall(self, t, exercise, rep_state):
+        now = self.hist[-1]
+
+        if self.suspect_since is None:
+            recent = [h for h in self.hist if t - h[0] <= FALL_WINDOW]
+            if len(recent) < 5:
+                return None
+            lean_jump = now[1] - min(h[1] for h in recent)
+            hip_drop = now[3] - min(h[3] for h in recent)   # image y grows downward
+            if now[1] > FALLEN_LEAN and lean_jump > LEAN_JUMP and hip_drop > HIP_DROP:
+                self.suspect_since = t
+            return None
+
+        elapsed = t - self.suspect_since
+        if now[1] < UPRIGHT_LEAN + 10 or elapsed > SUSPECT_TIMEOUT:
+            self.suspect_since = None          # got back up, or gave up waiting
+            return None
+        if elapsed >= CONFIRM_STILL:
+            window = [h for h in self.hist if t - h[0] <= CONFIRM_STILL]
+            x_range = max(h[2] for h in window) - min(h[2] for h in window)
+            y_range = max(h[3] for h in window) - min(h[3] for h in window)
+            if max(x_range, y_range) < STILL_MOVE and now[1] > FALLEN_LEAN - 10:
+                self.suspect_since = None
+                return self._alert(t, "urgent", "fall", "Possible fall - check now")
+        return None
+
+    def _check_fast_angle(self, t, exercise, rep_state):
+        index = MAIN_ANGLE_INDEX.get(exercise)
+        if index is None:
+            return None
+        now = self.hist[-1]
+        old = min((h for h in self.hist if t - h[0] >= ANGLE_SPAN),
+                  key=lambda h: abs((t - h[0]) - ANGLE_SPAN), default=None)
+        if old is None:
+            return None
+        speed = abs(now[index] - old[index]) / max(now[0] - old[0], 1e-6)
+        if speed > ANGLE_SPEED:
+            return self._alert(t, "check", "fast_angle", "Sudden movement")
+        return None
+
+    def _check_stuck(self, t, exercise, rep_state):
+        if rep_state != "DOWN":
+            self.down_since = None
+            return None
+        if self.down_since is None:
+            self.down_since = t
+        elif t - self.down_since >= STUCK_SECONDS:
+            return self._alert(t, "help", "stuck", "Stuck mid-rep")
+        return None
+
+    def _alert(self, t, level, reason, msg):
+        if t - self.last_alert.get(reason, -1e9) < COOLDOWN:
+            return None
+        self.last_alert[reason] = t
+        return {"level": level, "reason": reason, "msg": msg, "t": t}
 
 
 class Session:
@@ -50,17 +193,53 @@ class Session:
                        for name in DISPLAY_NAMES}
         self.feedback = None
         self.feedback_until = 0.0
+        self.alert = None
+        self.alert_until = 0.0
+        self.recent = deque(maxlen=RECENT_REPS)   # last few rep results: "good" / "bad"
+        self.red_until = 0.0
+        self.red_reason = ""
+        self.yellow_until = 0.0
+        self.yellow_reason = ""
+        self.status = "green"            # "green" / "yellow" / "red"  <- send this to the dashboard
+        self.status_reason = "All good"
+
+    def raise_alert(self, alert, now):
+        # Phase 3/dashboard: this is where we will send the alert out
+        print("ALERT:", alert)
+        self.alert = alert
+        self.alert_until = now + ALERT_SECONDS
+        if alert["level"] == "urgent":
+            self.red_until = now + STATUS_HOLD_SECONDS
+            self.red_reason = alert["msg"]
+        elif alert["level"] == "help":
+            self.yellow_until = now + STATUS_HOLD_SECONDS
+            self.yellow_reason = alert["msg"]
 
     def record(self, event, now):
         t = self.totals[event["exercise"]]
         t["reps"] += 1
         t[event["status"]] += 1
+        self.recent.append(event["status"])
         event["count"] = t["reps"]
         # Phase 3: this is the message we will send to the ESP32
         print(event)
         colour = GREEN if event["status"] == "good" else RED
         self.feedback = (event["msg"], colour)
         self.feedback_until = now + FEEDBACK_SECONDS
+
+    def update_status(self, now):
+        """Work out the box colour. Call once per frame.
+        red    = urgent alert (possible fall)
+        yellow = 'help' alert (stuck mid-rep) or too many bad reps lately
+        green  = everything else"""
+        if now < self.red_until:
+            self.status, self.status_reason = "red", self.red_reason
+        elif now < self.yellow_until:
+            self.status, self.status_reason = "yellow", self.yellow_reason
+        elif self.recent.count("bad") >= BAD_FOR_YELLOW:
+            self.status, self.status_reason = "yellow", "Recent reps need work"
+        else:
+            self.status, self.status_reason = "green", "All good"
 
 
 def draw_body(frame, p, features):
@@ -75,6 +254,21 @@ def draw_body(frame, p, features):
         x, y = p[part]
         cv2.putText(frame, f"{int(features[part])}", (x + 10, y),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, YELLOW, 2)
+
+
+def draw_status_box(frame, session):
+    """Station number with the green / yellow / red box under it (top right)."""
+    w = frame.shape[1]
+    x1, y1, x2, y2 = w - 250, 45, w - 10, 145
+    cv2.rectangle(frame, (x1 - 8, 6), (x2 + 8, y2 + 8), DARK, -1)
+    cv2.putText(frame, f"Station {STATION_NUMBER}", (x1, 33),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2)
+    cv2.rectangle(frame, (x1, y1), (x2, y2), STATUS_COLOURS[session.status], -1)
+    text_colour = WHITE if session.status == "red" else DARK
+    cv2.putText(frame, STATUS_TEXT[session.status], (x1 + 12, y1 + 42),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.9, text_colour, 2)
+    cv2.putText(frame, session.status_reason[:26], (x1 + 12, y1 + 78),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_colour, 1)
 
 
 def draw_panel(frame, session, recognizer, features, fps, now):
@@ -106,6 +300,13 @@ def draw_panel(frame, session, recognizer, features, fps, now):
         cv2.putText(frame, text, (10, frame.shape[0] - 25),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.4, colour, 3)
 
+    if session.alert and now < session.alert_until:
+        colour = ALERT_COLOURS[session.alert["level"]]
+        w = frame.shape[1]
+        cv2.rectangle(frame, (0, 230), (w, 280), colour, -1)
+        cv2.putText(frame, session.alert["level"].upper() + ": " + session.alert["msg"],
+                    (10, 266), cv2.FONT_HERSHEY_SIMPLEX, 0.9, WHITE, 2)
+
 
 def main():
     download_model_if_needed()
@@ -126,6 +327,7 @@ def main():
     counters = make_counters()        # one counter per exercise
     recognizer = ExerciseRecognizer()
     session = Session()
+    safety = SafetyMonitor()          # fall / stuck / sudden-movement alerts
     shadow_events = []                # reps finished before recognition locked in
     last_timestamp = -1
     prev_time = time.monotonic()
@@ -151,6 +353,7 @@ def main():
             last_timestamp = timestamp
             result = landmarker.detect_for_video(mp_image, timestamp)
 
+            alert = None
             points = None
             if result.pose_landmarks:
                 points = get_body_points(result.pose_landmarks[0], width, height)
@@ -158,6 +361,7 @@ def main():
             features = None
             if points is None:
                 change = recognizer.update_no_person(now)
+                alert = safety.update_no_person(now)
                 cv2.putText(frame, "Step into view (side-on, whole body)",
                             (10, height - 70), cv2.FONT_HERSHEY_SIMPLEX,
                             0.8, YELLOW, 2)
@@ -176,7 +380,14 @@ def main():
                         shadow_events.append((now, event))
 
                 change = recognizer.update(now, features)
+                rep_state = (counters[recognizer.current].state
+                             if recognizer.current else None)
+                alert = safety.update(now, points, features,
+                                      recognizer.current, rep_state)
                 draw_body(frame, points, features)
+
+            if alert:
+                session.raise_alert(alert, now)
 
             if change in ("locked", "switched"):
                 name = recognizer.current
@@ -187,6 +398,7 @@ def main():
                 shadow_events.clear()
             elif change == "unlocked":
                 print("--- Set finished ---")
+                session.recent.clear()
                 for counter in counters.values():
                     counter.reset()
                 shadow_events.clear()
@@ -198,7 +410,9 @@ def main():
             fps = 0.9 * fps + 0.1 * (1.0 / max(now - prev_time, 1e-6))
             prev_time = now
 
+            session.update_status(now)
             draw_panel(frame, session, recognizer, features, fps, now)
+            draw_status_box(frame, session)
             cv2.imshow("ECE 198 Exercise Tracker", frame)
 
             key = cv2.waitKey(1) & 0xFF
@@ -207,6 +421,7 @@ def main():
             if key == ord("r"):
                 session = Session()
                 recognizer = ExerciseRecognizer()
+                safety = SafetyMonitor()
                 for counter in counters.values():
                     counter.reset()
                 shadow_events.clear()
