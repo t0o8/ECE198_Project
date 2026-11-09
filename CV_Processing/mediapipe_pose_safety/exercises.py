@@ -56,7 +56,7 @@ class RepCounter:
 class SquatCounter(RepCounter):
     name = "squat"
     main_angle = "knee"
-    start = 140
+    start = 120 #org 140
     finish = 160
     GOOD_DEPTH = 100        # knee must bend to this angle or lower
     MAX_TORSO_LEAN = 50     # chest should not drop too far forward
@@ -88,8 +88,8 @@ class PushupCounter(RepCounter):
 class CurlCounter(RepCounter):
     name = "curl"
     main_angle = "elbow"
-    start = 140
-    finish = 150
+    start = 120     #original was 140
+    finish = 160  
     GOOD_TOP = 60           # elbow must close to this angle or lower
     MAX_SWING = 15          # torso should not rock more than this (degrees)
 
