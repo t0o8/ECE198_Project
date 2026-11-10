@@ -98,4 +98,6 @@ def compute_features(p):
         "hip": joint_angle(p["shoulder"], p["hip"], p["knee"]),
         "body_line": joint_angle(p["shoulder"], p["hip"], p["ankle"]),
         "torso_lean": lean_from_vertical(p["shoulder"], p["hip"]),
+        # upper arm: 0 = hanging straight down, grows as the arm swings forward or back
+        "upper_arm": lean_from_vertical(p["shoulder"], p["elbow"]),
     }

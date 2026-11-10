@@ -5,8 +5,9 @@ and safety alerts for the coach.
   1. Finds the body with MediaPipe Pose Landmarker.
   2. Works out which exercise is being done (squat / push-up / bicep curl).
   3. Counts reps of that exercise and judges each one GOOD or BAD.
-  4. Watches for danger (falls, not getting up, sudden movement, tiredness)
-     and shows a red / yellow alert for the coach (see safety.py).
+  4. Safety: if the person falls and does not get up (or goes out of view),
+     or cannot get up from the low position of an exercise, it shows a red
+     CHECK alert for the coach (see safety.py).
 
 Stand SIDE-ON to the camera with your whole body in view.
 For push-ups, put the laptop low (on the floor or a chair).
@@ -27,7 +28,7 @@ from pose_utils import (MODEL_PATH, download_model_if_needed,
 from exercises import make_counters, DISPLAY_NAMES
 from recognizer import ExerciseRecognizer
 from camera_stream import open_source
-from safety import SafetyMonitor, URGENT
+from safety import SafetyMonitor
 
 # ============================================================
 # Settings
@@ -49,8 +50,8 @@ GREY = (130, 130, 130)
 BLACK = (20, 20, 20)
 
 # Safety status box (under the big rep counter)
-STATUS_COLOURS = {"green": GREEN, "yellow": YELLOW, "red": RED, "gone": GREY}
-STATUS_TEXT = {"green": "OK", "yellow": "CHECK", "red": "URGENT", "gone": "NO PERSON"}
+STATUS_COLOURS = {"green": GREEN, "red": RED, "gone": GREY}
+STATUS_TEXT = {"green": "OK", "red": "CHECK", "gone": "NO PERSON"}
 
 
 class Session:
@@ -70,7 +71,7 @@ class Session:
         event["count"] = t["reps"]
         self.last_exercise = event["exercise"]
         print(event)
-        colour = GREEN if event["status"] == "good" else RED
+        colour = GREEN if event["status"] == "good" else YELLOW
         self.feedback = (event["msg"], colour)
         self.feedback_until = now + FEEDBACK_SECONDS
 
@@ -168,38 +169,29 @@ def fit_text(text, max_width, scale, thickness):
     return scale
 
 
-def draw_safety(frame, safety, now):
-    """Safety status box under the rep counter + an alert banner when needed."""
+def draw_safety(frame, safety):
+    """Safety status box under the rep counter + a red banner while an alert is on."""
     height, width = frame.shape[:2]
 
     # --- status box (always shown) ---
-    status = safety.status(now)
+    status = safety.status()
     x0, y0 = width - 220, 195
     cv2.rectangle(frame, (x0, y0), (width, y0 + 45), STATUS_COLOURS[status], -1)
-    ink = WHITE if status in ("red", "gone") else BLACK
+    ink = BLACK if status == "green" else WHITE
     cv2.putText(frame, f"SAFETY: {STATUS_TEXT[status]}", (x0 + 12, y0 + 31),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, ink, 2)
 
-    # --- alert banner (only while an alert is active) ---
-    alert = safety.active_alert(now)
-    if alert is None:
+    # --- alert banner (stays until the coach presses c) ---
+    if safety.alert is None:
         return
-    urgent = alert["level"] == URGENT
-    colour, ink = (RED, WHITE) if urgent else (YELLOW, BLACK)
-    banner_h = 72 if urgent else 44
     y1 = height - 110                      # stays above the rep message and "Step into view"
-    y0 = y1 - banner_h
-    cv2.rectangle(frame, (0, y0), (width, y1), colour, -1)
-    text = ("URGENT: " if urgent else "CHECK: ") + alert["msg"]
+    y0 = y1 - 72
+    cv2.rectangle(frame, (0, y0), (width, y1), RED, -1)
+    text = "CHECK: " + safety.alert
     scale = fit_text(text, width - 24, 0.75, 2)
-    cv2.putText(frame, text, (12, y0 + 30), cv2.FONT_HERSHEY_SIMPLEX, scale, ink, 2)
-    if urgent:
-        cv2.putText(frame, "Coach: press c after checking on them", (12, y0 + 60),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, ink, 1)
-
-
-def print_alert(alert):
-    print(f"[SAFETY {alert['level'].upper()}] {alert['msg']}")
+    cv2.putText(frame, text, (12, y0 + 30), cv2.FONT_HERSHEY_SIMPLEX, scale, WHITE, 2)
+    cv2.putText(frame, "Coach: press c after checking on them", (12, y0 + 60),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, WHITE, 1)
 
 
 def main():
@@ -224,12 +216,6 @@ def main():
     session = Session()
     safety = SafetyMonitor()
     shadow_events = []                # reps finished before recognition locked in
-
-    def record_rep(event, now):
-        """Count a rep, then let the safety monitor check for tiredness."""
-        session.record(event, now)
-        for alert in safety.on_rep(event, now):
-            print_alert(alert)
     last_timestamp = -1
     prev_time = time.monotonic()
     fps = 0.0
@@ -275,7 +261,7 @@ def main():
                         continue
                     if (event["exercise"] == recognizer.current
                             and recognizer.agrees(event["exercise"])):
-                        record_rep(event, now)
+                        session.record(event, now)
                     else:
                         shadow_events.append((now, event))
 
@@ -287,7 +273,7 @@ def main():
                 print(f"--- Exercise detected: {DISPLAY_NAMES[name]} ---")
                 for t, event in shadow_events:
                     if event["exercise"] == name and now - t <= LOOKBACK_SECONDS:
-                        record_rep(event, now)
+                        session.record(event, now)
                 shadow_events.clear()
             elif change == "unlocked":
                 print("--- Set finished ---")
@@ -295,9 +281,10 @@ def main():
                     counter.reset()
                 shadow_events.clear()
 
-            # safety checks (uses this frame's body, or None if nobody is visible)
-            for alert in safety.update(now, points, features, recognizer, counters):
-                print_alert(alert)
+            # fall check (points is None when nobody is visible)
+            alert = safety.update(now, points, features, recognizer.current)
+            if alert:
+                print(f"[SAFETY CHECK] {alert}")
 
             # keep only recent shadow events
             shadow_events = [(t, e) for t, e in shadow_events
@@ -308,7 +295,7 @@ def main():
 
             draw_panel(frame, session, recognizer, features, fps, now)
             draw_counter(frame, session, recognizer, now)
-            draw_safety(frame, safety, now)
+            draw_safety(frame, safety)
             cv2.imshow("ECE 198 Exercise Tracker", frame)
 
             key = cv2.waitKey(1) & 0xFF

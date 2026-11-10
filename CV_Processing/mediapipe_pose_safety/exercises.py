@@ -44,10 +44,16 @@ class RepCounter:
 
         if angle > self.finish:
             self.state = "UP"
+            if not self.is_real_rep(self.lowest, self.highest):
+                return None                      # just moving around, not a rep
             status, message = self.judge(self.lowest, self.highest)
             return {"exercise": self.name, "status": status, "msg": message,
                     "lowest_angle": round(self.lowest[self.main_angle])}
         return None
+
+    def is_real_rep(self, low, high):
+        """False if the movement was not really an attempt at this exercise."""
+        return True
 
     def judge(self, low, high):
         return "good", "Good rep!"
@@ -56,7 +62,7 @@ class RepCounter:
 class SquatCounter(RepCounter):
     name = "squat"
     main_angle = "knee"
-    start = 120 #org 140
+    start = 140
     finish = 160
     GOOD_DEPTH = 100        # knee must bend to this angle or lower
     MAX_TORSO_LEAN = 50     # chest should not drop too far forward
@@ -88,10 +94,17 @@ class PushupCounter(RepCounter):
 class CurlCounter(RepCounter):
     name = "curl"
     main_angle = "elbow"
-    start = 120     #original was 140
-    finish = 160  
+    start = 140
+    finish = 150
+    MIN_BEND = 110          # elbow must bend below this, or it is not a curl at all (ignored)
+    MAX_ARM_SWING = 35      # upper arm swinging more than this = swinging the arm, not a curl (ignored)
     GOOD_TOP = 60           # elbow must close to this angle or lower
     MAX_SWING = 15          # torso should not rock more than this (degrees)
+
+    def is_real_rep(self, low, high):
+        if low["elbow"] > self.MIN_BEND:
+            return False
+        return high["upper_arm"] - low["upper_arm"] <= self.MAX_ARM_SWING
 
     def judge(self, low, high):
         if low["elbow"] > self.GOOD_TOP:

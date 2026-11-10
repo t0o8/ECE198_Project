@@ -5,9 +5,8 @@ exercise the user is doing (squat, push-up or bicep curl), counts the reps,
 and judges each rep as GOOD or BAD using joint angles from MediaPipe Pose
 Landmarker. The laptop screen is the coaching display.
 
-This version adds **safety alerts for the coach** (`safety.py`), aimed at older adults:
-a red URGENT alert for a possible fall, and yellow CHECK alerts for not getting up,
-losing sight of the person mid-rep, sudden fast movement and signs of tiredness.
+This version adds a **fall alert for the coach** (`safety.py`): if the person drops
+to the floor and does not get up, or goes out of view, a red CHECK alert is shown.
 
 ## Files
 
@@ -17,7 +16,7 @@ losing sight of the person mid-rep, sudden fast movement and signs of tiredness.
 | `pose_utils.py` | Model download, angle maths, landmarks to measurements |
 | `recognizer.py` | Works out which exercise is being done (thresholds at the top of the file) |
 | `exercises.py` | Rep counters and form rules for each exercise (thresholds at the top of each class) |
-| `safety.py` | Safety monitor: danger rules with staged confirmation (thresholds at the top of the file) |
+| `safety.py` | Fall detection for the coach (thresholds at the top of the file) |
 | `camera_stream.py` | Reads pictures from the computer camera |
 | `requirements.txt` | Python libraries needed |
 
@@ -42,7 +41,7 @@ The pose model is stored in `models/` one folder up and downloads automatically 
 - Stand **side-on** to the camera with your whole body in view (about 2.5-3 m away).
 - For push-ups, put the laptop low (floor or chair).
 - Click the video window, then press `q` to quit, `r` to reset, or `c` to clear a safety alert
-  after checking on the person (a red URGENT alert stays until `c` is pressed).
+  after checking on the person (the red CHECK alert stays until `c` is pressed).
 - If the wrong camera opens (for example an iPhone on a Mac), run
   `find_cameras.py` and change `CAMERA_SOURCE` near the top of `exercise_tracker.py`.
 
@@ -51,20 +50,22 @@ The pose model is stored in `models/` one folder up and downloads automatically 
 - [x] Laptop camera + MediaPipe + rep counting
 - [x] Automatic exercise recognition (squat / push-up / curl)
 - [x] GOOD / BAD form feedback on screen
-- [x] Safety alerts (fall, not getting up, lost mid-rep, sudden movement, tiredness)
+- [x] Fall alert (fell and has not got up, or fell out of view)
 - [ ] Tune thresholds with recorded test data (falls: slow, safe simulations on a mat)
 
-## Safety alerts
+## Fall alert
 
-| Alert | Level | How it is detected |
-|---|---|---|
-| Possible fall | URGENT | Fast drop (upright to near horizontal within 1 s, hip drops half a torso length), then lying still for 2 s or leaving the view |
-| On the floor after a fast drop | CHECK | Fast drop, still on the floor after 6 s but moving |
-| Has not come up | CHECK | In the low position of a squat or push-up for 8 s |
-| Lost sight mid-rep | CHECK | Body out of view for 2 s in the middle of a rep |
-| Sudden fast movement | CHECK | Torso tipping > 150 deg/s or hips > 2 torso lengths/s for 3 frames |
-| Tired: bad form | CHECK | 2 of the last 3 reps BAD |
-| Tired: slowing down | CHECK | Latest rep takes 1.8x the normal time |
+1. **Suspected:** within 1 s the hip drops at least half a torso length and the person ends
+   up on the floor: hip at about ankle height (lying, sitting, or propped up on the arms). The safety box turns red.
+2. **Alert:** 3 s later the person is still not standing again, or they have been out of view
+   for 1 s. A red CHECK banner stays until the coach presses `c`.
 
-A suspected fall is cancelled if the person gets back up or starts moving their arms (push-ups).
+If the person gets back up in time, nothing more is shown.
+
+**Cannot get up during an exercise:** the person stays in the low position of a squat
+or push-up for 8 s (for example they sank to the floor mid-rep). Same red CHECK alert.
 This is a helper that tells the coach to look; it is not a medical device.
+
+## Feedback colours
+
+Green = good rep. Yellow = rep not up to standard. Red = suspected or confirmed fall.

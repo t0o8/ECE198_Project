@@ -4,7 +4,8 @@ Works out WHICH exercise the user is doing, from the last 2 seconds of movement.
 Rules (no training needed):
   - Body roughly horizontal + elbows bending        -> push-up
   - Body upright + knees bending                    -> squat
-  - Body upright + elbows bending, knees still      -> bicep curl
+  - Body upright + elbows bending, knees and
+    upper arms still                                -> bicep curl
   - Nothing moving much                             -> idle (no exercise)
 
 To avoid flickering:
@@ -25,6 +26,7 @@ HORIZONTAL_LEAN = 60     # torso lean above this means "lying / push-up position
 KNEE_MOVING = 35         # knee angle range (degrees) that means "knees bending"
 ELBOW_MOVING = 40        # elbow angle range that means "elbows bending"
 KNEE_STILL = 20          # knee range below this means "legs still"
+UPPER_ARM_STILL = 35     # upper arm range below this means "only the forearm moves" (a curl)
 
 
 class ExerciseRecognizer:
@@ -55,7 +57,10 @@ class ExerciseRecognizer:
             return "pushup" if elbow_range > ELBOW_MOVING else None
         if knee_range > KNEE_MOVING:
             return "squat"
-        if elbow_range > ELBOW_MOVING and knee_range < KNEE_STILL:
+        upper_arms = [f["upper_arm"] for f in frames]
+        upper_arm_range = max(upper_arms) - min(upper_arms)
+        if (elbow_range > ELBOW_MOVING and knee_range < KNEE_STILL
+                and upper_arm_range < UPPER_ARM_STILL):
             return "curl"
         return None
 
