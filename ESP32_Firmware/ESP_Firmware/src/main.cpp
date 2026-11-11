@@ -6,7 +6,11 @@
 
 #define PART_BOUNDARY "123456789000000000000987654321"
 static const char *STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
-static const char *STREAM_PART = "\r\n\--" PART_BOUNDARY "\r\n\Content-Type: image/jpeg\r\n\Content-Length: %u\r\n\\r\n";
+static const char *STREAM_PART = "\r\n\
+--" PART_BOUNDARY "\r\n\
+Content-Type: image/jpeg\r\n\
+Content-Length: %u\r\n\
+\r\n";
 
 httpd_handle_t server_handle = NULL;
 esp_err_t GetJPEGImage(uint8_t *&buffer, size_t &size) {
@@ -14,7 +18,6 @@ esp_err_t GetJPEGImage(uint8_t *&buffer, size_t &size) {
   if (!frame_buffer) {
     return ESP_FAIL;
   }
-
   bool convert_success = fmt2jpg(frame_buffer->buf, frame_buffer->len, frame_buffer->width, frame_buffer->height, frame_buffer->format, CameraConstants::QUALITY, &buffer, &size);
   
   esp_camera_fb_return(frame_buffer);
@@ -69,14 +72,10 @@ void setup() {
   } else {
     Serial.println("Camera connected");
   }
-  sensor_t *s = esp_camera_sensor_get();
-  Serial.printf("Sensor PID: 0x%04Xz", s->id.PID);
-// 0x26 = OV2640, 0x3660 = OV3660, 0x2145 = GC2145, 0x9B = GC0308, 0x232 = GC032A
-
-  
 
   WiFi.begin(WifiConstants::SSID, WifiConstants::PASSWORD);
-
+  WiFi.setSleep(false);
+  
   if (WiFi.status() == WL_NO_SHIELD) {
     Serial.println("Shield Missing");
   }
