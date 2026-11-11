@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Instructor · CCCARE exercise tracking</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23111'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/motion.js"></script>
+  <script src="js/theme.js"></script>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="instructor.html">CCCARE <span class="brand-sub">exercise tracking</span></a>
+    <p class="who"><span class="mono" data-who></span><a href="index.html" data-signout>Sign out</a></p>
+  </header>
+
+  <main>
+    <section class="setup" id="setup">
+      <div class="setup-head">
+        <h1>New session</h1>
+        <p class="mono muted" data-today></p>
+      </div>
+
+      <div class="count-row">
+        <label for="count">Participants</label>
+        <div class="stepper">
+          <button type="button" class="step" data-step="-1" aria-label="One fewer participant">−</button>
+          <input id="count" type="number" min="1" max="30" inputmode="numeric">
+          <button type="button" class="step" data-step="1" aria-label="One more participant">+</button>
+        </div>
+        <span class="mono muted">1 to 30</span>
+        <button type="button" class="btn" id="start">Start session</button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="roster">
+          <thead>
+            <tr><th scope="col">No.</th><th scope="col">Name</th><th scope="col">Workout</th><th scope="col"><span class="sr-only">Edit</span></th></tr>
+          </thead>
+          <tbody id="roster"></tbody>
+        </table>
+      </div>
+
+      <section class="recent">
+        <h2>Recent sessions</h2>
+        <p class="muted">Sessions marked sample were generated so the progress graphs have some history.</p>
+        <ol id="recent"></ol>
+      </section>
+    </section>
+
+    <section class="live" id="live" hidden>
+      <div class="livebar">
+        <h1 class="live-title"><span class="rec" aria-hidden="true"></span><span id="live-word">Live</span></h1>
+        <dl class="live-meta">
+          <div><dt>time</dt><dd id="clock">0:00</dd></div>
+          <div><dt>participants</dt><dd id="live-count">0</dd></div>
+          <div><dt>feed</dt><dd id="feed">simulated</dd></div>
+        </dl>
+        <div class="live-actions">
+          <button type="button" class="btn btn-light" id="pause" aria-pressed="false">Pause</button>
+          <button type="button" class="btn" id="end">End session</button>
+        </div>
+      </div>
+      <div class="live-sub">
+        <p class="attention" id="attention"></p>
+        <p class="legend mono" id="legend" title="The wheel fills to the success so far. Its colour is the average of how well each exercise is going.">wheel colour, average per exercise</p>
+      </div>
+      <div class="grid" id="grid"></div>
+    </section>
+  </main>
+
+  <footer class="foot mono">
+    <p>Prototype. Sessions, names and workouts are saved in this browser only.</p>
+    <a href="#" data-reset>Reset sample data</a>
+  </footer>
+
+  <script src="js/config.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/exercises.js"></script>
+  <script src="js/score.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/feed.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/pages/instructor.js"></script>
+</body>
+</html>

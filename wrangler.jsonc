@@ -1,0 +1,16 @@
+// Cloudflare Workers configuration for the CCCARE web dashboard.
+// The dashboard is plain HTML, CSS and JavaScript, so the Worker only serves static files
+// (no Worker script). The site's home page is the dashboard's sign-in page.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Must match the Worker's name in the Cloudflare dashboard (Workers & Pages).
+  "name": "ece198-project",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./Web_Dashboard/cccare-tracker (1)"
+  },
+  // Branches other than the production branch are deployed as Previews by
+  // `npx wrangler preview`, which needs this block. Empty means previews use the same
+  // settings as production.
+  "previews": {}
+}
