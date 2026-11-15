@@ -2,8 +2,8 @@
 #include "esp_camera.h"
 
 namespace WifiConstants {
-    const char* SSID = "My iPhone";
-    const char* PASSWORD = "wodeiphone";
+    const char* SSID = "Felix’s iPhone";
+    const char* PASSWORD = "ece198__";
 };
 
 namespace CameraConstants {
