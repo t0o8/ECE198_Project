@@ -74,7 +74,11 @@ exercise success = adherence × average quality
 
 **Workout success** combines the exercises, weighted by how many reps each one plans. For example, 2 sets of 10 done as 10 and 10 at 85% quality scores 85%. Done as 10 and 5, or as 10 and 15, at 85% quality it scores 64%. Stopping a set short and going past it cost the same, because both came up in the brief. To change the rule, edit the scoring functions in `js/score.js`.
 
-**The wheels.** Each live block has two. The big wheel is the current exercise: it fills to that exercise's success and shows the set it's on ("set 2 of 3") and the reps done in that set ("6/10 reps"). The small wheel beside it is the whole session, with the sets finished so far ("2/6 sets"). Each exercise row shows its sets finished. A wheel's colour, red through orange and yellow to green, is how well the exercise (or, for the session wheel, the average of the exercises) is going, so it doesn't just track progress: only finished sets count toward adherence, so a good start shows green while the wheel is still nearly empty. On results pages the wheel's colour is the average of the exercises' success. The percentage is always printed in the middle for anyone who can't tell the colours apart.
+**The wheels.** Each live block has two. The big wheel is **progress through the current set**: it fills as the reps of that set are done and shows "6/10 reps" and "set 2 of 3". It is always one plain colour, so it isn't mistaken for a score. The small wheel beside it is the **score**: the average rep score of the current exercise, red through orange and yellow to green, with the percentage printed in the middle for anyone who can't tell the colours apart. Under it are the sets finished across the whole session ("2/6 sets total"). Each exercise row shows its sets finished.
+
+**Rep scores.** The camera scores each rep from 0 to 100 by how close it came to the target, with some tolerance: depth (squat knee bend, push-up elbow bend, curl elbow bend) is worth 40 points and form (chest up, body straight, no swinging) 20. A squat to 101 degrees now scores about 100 rather than failing. The rules are `SCORING` at the top of `eb/flask_server/camera_pipeline.py`. A rep that takes under 0.6 seconds, or comes within 0.8 seconds of the last one, is MediaPipe jitter and isn't counted.
+
+**Rests.** Once a set's reps are done and the rest countdown is running, movement isn't counted as reps (shaking out the arms looked like curls). Reps that carry straight on from the set, within 4 seconds, still count as reps over the plan. The same applies after the whole workout is finished. Saved results record how many rep-like movements were left out (`repsDuringRest`).
 
 **Session results** put a coloured box next to each person's reps, sets finished, quality and exertion, red (poor) to green (good). Reps lose points for going over as well as stopping short; exertion is judged by its peak, green up to 5 of 10 and red at 9 or more. The rules are `statScore` in `js/ui.js`.
 
@@ -86,7 +90,9 @@ exercise success = adherence × average quality
 - Reps over the planned count for the current set, or past the last set
 - A form fault reported by the camera, such as "Knees caving inward on the way up"
 
-A form fault, or going over the planned reps, only counts as an error once at least 2 reps show it (`errorReps` in `LIMITS`). This applies live and in the saved results.
+A form fault, or going over the planned reps, only counts as an error once at least 2 reps show it (`errorReps` in `LIMITS`).
+
+**Only the prescribed exercise counts.** A rep only counts for the exercise the workout is on, or for the next exercise once this one is over (its last set is done, or the last set was stopped short followed by a rest of 15 seconds). A rep of any other exercise, such as a squat the camera thinks it saw during curls, is not counted. If two or more of those come in a row within 15 seconds, the strip says, for example, "Squat seen, but the workout is on bicep curl: not counted". The saved result records how many reps were left out (`repsIgnored`). The rules are `allowedExercises` in `js/score.js`. This applies live and in the saved results.
 - No reps for a while (the time ticks over into minutes, hours and days)
 
 On the patient's screen each message also carries a short cue, such as "Keep your knees in line with your toes."
@@ -128,7 +134,9 @@ If someone may be hurt, exhausted or unconscious, their whole block gets a thick
 | Alert | When |
 | --- | --- |
 | May be unconscious | fallen, or on the floor during a standing exercise, and not moving for 15 seconds |
-| May be hurt | the camera reports a fall; or on the floor during a standing exercise; or form suddenly 30 points worse than usual, then they stop mid-set |
+| May be hurt | the camera reports a fall **and** they then don't move for 5 seconds; or on the floor during a standing exercise and not moving for 10 seconds; or form suddenly 30 points worse than usual, then they stop mid-set and don't move |
+
+A fall or floor reading on its own is not an emergency, because the camera's pose estimates jump about and cause false ones. It only becomes an alert once the person has also stopped moving (`hurtStillSeconds`, `floorStillSeconds` and `stillMotion` in `LIMITS`). While they're still moving after a fall, the block shows "Possible fall seen: keep an eye on them" in the attention list instead.
 | May be exhausted | effort 9.5 of 10, or 9 of 10 for 20 seconds; or very hard effort with form suddenly much worse |
 
 These are reasons to go and check, not a diagnosis: the camera can't be certain. **Checked, OK** on the banner stops the pulsing once the instructor has seen to them. The banner stays until the signs clear, and a different alert pulses again. The patient's own screen shows "Are you OK? Your instructor has been alerted" with what to do, and stops the encouraging messages. Alerts keep working while the session is paused. Every alert is saved with the results, so it shows on the session results page and in the patient's "To work on" list.

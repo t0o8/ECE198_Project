@@ -10,14 +10,22 @@
     // Rest after a finished set is set per exercise by the instructor (CC.restOf); the
     // no-rep flag waits that long plus idleSeconds.
     setGapSeconds: 15, // a pause at least this long ends a set, so the next rep starts the next set
+    restGraceSeconds: 4, // reps that carry straight on after a finished set (within this many seconds of
+    // the last rep) still count, as reps over; after that, nothing counts until the rest is over
+    wrongHoldSeconds: 15, // reps of the wrong exercise this recent are reported (at least errorReps of them)
     faultHoldSeconds: 10, // a form fault stays on screen this long after it was seen
     recentReps: 5, // the quality figure on each block is the average of the last five reps
     errorReps: 2, // a form fault, or going over the planned reps, only counts once at least this many reps show it
 
     // ---- safety (see Tracker.condition) ----
-    stillMotion: 0.05, // camera movement level (0-1) below which someone counts as not moving
+    stillMotion: 0.1, // camera movement level (0-1) below which someone counts as not moving (jitter of a still person reads up to about 0.08)
     stillSeconds: 30, // not moving for this long (outside a planned rest) is flagged
+    awaySeconds: 10, // out of the camera's view this long is flagged (not as an emergency)
     unconsciousSeconds: 15, // fallen, or on the floor in a standing exercise, and not moving this long
+    // A fall or floor reading alone is not enough: MediaPipe's jumpy readings cause false ones.
+    // It only becomes "may be hurt" once the person has also stopped moving this long.
+    hurtStillSeconds: 5, // after a fall the camera confirmed
+    floorStillSeconds: 10, // on the floor during a standing exercise
     exhaustedExertion: 9, // exertion at or above this for exhaustedSeconds counts as exhausted
     exhaustedSeconds: 20,
     exhaustedPeak: 9.5, // exertion this high counts as exhausted straight away
@@ -87,6 +95,9 @@
       this.set = 0; // current set; equals the exercise's set count once past its last set
       this.reps = 0;
       this.recent = [];
+      this.wrongReps = []; // recent reps of an exercise the workout isn't on: { exercise, at }
+      this.ignoredReps = 0; // how many reps were not counted for that reason
+      this.restReps = 0; // movement during a rest that looked like reps (not counted)
       this.currentFaults = [];
       this.faultsAt = -Infinity;
       this.exertion = null;
@@ -100,7 +111,8 @@
       this.startedAt = startedAt;
       this.motionAt = -Infinity; // when the last movement level arrived (-Infinity: none ever)
       this.stillSince = null; // when they stopped moving, or null while moving
-      this.posture = null; // 'upright', 'floor' or 'fallen'; null until the pipeline says
+      this.posture = null; // 'upright', 'floor', 'fallen' or 'away'; null until the pipeline says
+      this.awaySince = null; // when they went out of the camera's view, or null
       this.fallAt = null;
       this.highSince = null; // when exertion reached exhaustedExertion
       this.lastRepReal = null;
@@ -116,17 +128,32 @@
 
     // Where the next rep goes. A pause of setGapSeconds or more after a rep starts a new set.
     // When the camera pipeline names the exercise, a different exercise moves straight to it.
+    // Which exercises a rep may count for right now: the one the workout is on, and the
+    // next one once this exercise is over (its last set is done, or they stopped the last
+    // set and rested setGapSeconds). Anything else is the camera mistaking the movement
+    // (for example a squat seen during curls), so it is not counted.
+    allowedExercises(now) {
+      const plan = this.plan;
+      const e = plan[this.ex];
+      const allowed = [e.exercise];
+      const last = e.sets - 1;
+      const over = this.set >= e.sets ||
+        (this.set === last && (e.done[last] >= e.reps ||
+          (e.done[last] > 0 && this.seconds(this.lastRepAt, now) >= LIMITS.setGapSeconds)));
+      if (over && this.ex + 1 < plan.length) allowed.push(plan[this.ex + 1].exercise);
+      return allowed;
+    }
+
+    // What the workout expects now, for the "wrong exercise" note.
+    expectedExercise(now) {
+      const allowed = this.allowedExercises(now);
+      return allowed[allowed.length - 1];
+    }
+
     nextPosition(exercise, now) {
       const plan = this.plan;
-      if (exercise && plan[this.ex].exercise !== exercise) {
-        const matches = plan.map((_, i) => i).filter((i) => plan[i].exercise === exercise);
-        if (matches.length) {
-          const open = matches.find((i) => plan[i].done.includes(0));
-          const ex = open == null ? matches[0] : open;
-          const set = plan[ex].done.indexOf(0);
-          return { ex, set: set === -1 ? plan[ex].sets : set };
-        }
-      }
+      // Moving on to the next exercise of the workout (allowedExercises said it may).
+      if (exercise && plan[this.ex].exercise !== exercise) return { ex: this.ex + 1, set: 0 };
       const e = plan[this.ex];
       const started = this.set >= e.sets || e.done[this.set] > 0;
       if (!this.reps || !started || this.seconds(this.lastRepAt, now) < LIMITS.setGapSeconds) {
@@ -153,12 +180,34 @@
       if (event.type === 'posture') {
         if (event.posture === 'fallen' && this.posture !== 'fallen') this.fallAt = real;
         if (event.posture !== 'fallen') this.fallAt = null;
+        if (event.posture === 'away') {
+          if (this.awaySince == null) this.awaySince = real;
+          this.stillSince = null; // the camera can't see whether they're moving
+        } else {
+          this.awaySince = null;
+        }
         this.posture = event.posture;
         return;
       }
       if (event.type === 'rep') {
         // A rep means they're moving, and upright enough to exercise.
         this.stillSince = null;
+        // Only the exercise the workout is on counts. A rep of another exercise is noted
+        // (to show "wrong exercise") but not counted.
+        // Resting (the set is done and the rest countdown is running) or the workout is
+        // finished: movement now is shaking out the arms, stretching and so on, not reps.
+        // Reps that follow straight on from the set still count, as reps over the plan.
+        const resting = this.reps > 0 && (this.restLeft(now) > 0 || this.complete());
+        if (resting && this.seconds(this.lastRepAt, now) > LIMITS.restGraceSeconds) {
+          this.restReps += 1;
+          return;
+        }
+        if (event.exercise && !this.allowedExercises(now).includes(event.exercise)) {
+          this.wrongReps.push({ exercise: event.exercise, at: now });
+          this.ignoredReps += 1;
+          return;
+        }
+        this.wrongReps = [];
         this.lastRepReal = real;
         this.allQualities.push(event.quality);
         const pos = this.nextPosition(event.exercise, now);
@@ -196,8 +245,13 @@
     // Seconds without movement, from the camera's movement level. null when the pipeline
     // doesn't send movement levels (then only "no reps" can be told).
     stillFor(real) {
-      if (this.motionAt === -Infinity) return null;
+      if (this.motionAt === -Infinity || this.posture === 'away') return null;
       return this.stillSince == null ? 0 : this.seconds(this.stillSince, real);
+    }
+
+    // Seconds out of the camera's view (0 while in view).
+    awayFor(real) {
+      return this.posture === 'away' && this.awaySince != null ? this.seconds(this.awaySince, real) : 0;
     }
 
     // Form suddenly much worse: the last 3 reps against the 10 before them.
@@ -217,6 +271,9 @@
       const floorExercise = !!(ex && ex.floor);
       const fallen = this.posture === 'fallen';
       const downUnexpectedly = fallen || (this.posture === 'floor' && !floorExercise);
+      // Not moving for at least s seconds. Without movement levels from the camera this can't
+      // be told, so the old rule applies (alert straight away).
+      const stillAtLeast = (s) => still == null || still >= s;
 
       if (downUnexpectedly && still != null && still >= LIMITS.unconsciousSeconds) {
         list.push({
@@ -225,18 +282,20 @@
           message: `May be unconscious: ${fallen ? 'fell and has' : 'on the floor and has'} not moved for ${fmtDuration(still)}`,
           cue: 'Stay still. Your instructor is coming to check on you.',
         });
-      } else if (fallen) {
+      } else if (fallen && stillAtLeast(LIMITS.hurtStillSeconds)) {
         list.push({
           kind: 'hurt',
-          summary: 'Possible fall',
-          message: `May be hurt: fell ${fmtDuration(this.seconds(this.fallAt, real))} ago`,
+          summary: 'Possible fall, then not moving',
+          message: `May be hurt: fell ${fmtDuration(this.seconds(this.fallAt, real))} ago` +
+            (still ? ` and has not moved for ${fmtDuration(still)}` : ''),
           cue: 'Stay where you are. Your instructor is coming to help.',
         });
-      } else if (downUnexpectedly) {
+      } else if (downUnexpectedly && !fallen && stillAtLeast(LIMITS.floorStillSeconds)) {
         list.push({
           kind: 'hurt',
-          summary: 'On the floor during a standing exercise',
-          message: 'May be hurt: on the floor during a standing exercise',
+          summary: 'On the floor during a standing exercise, not moving',
+          message: 'May be hurt: on the floor during a standing exercise' +
+            (still ? ` and not moving for ${fmtDuration(still)}` : ''),
           cue: 'Stay where you are. Your instructor is coming to check on you.',
         });
       }
@@ -260,7 +319,8 @@
 
       // Form suddenly much worse, then stopped part-way through a set: possibly in pain.
       if (!list.some((d) => d.kind === 'hurt') && this.qualityDropped() && !this.setFinished() && !this.complete() &&
-        this.lastRepReal != null && this.seconds(this.lastRepReal, real) >= LIMITS.idleSeconds) {
+        this.lastRepReal != null && this.seconds(this.lastRepReal, real) >= LIMITS.idleSeconds &&
+        stillAtLeast(LIMITS.hurtStillSeconds)) {
         list.push({
           kind: 'hurt',
           summary: 'Possibly hurt (form suddenly worse, then stopped mid-set)',
@@ -272,7 +332,7 @@
     }
 
     // What state someone is in: { state, label, danger, key, acknowledged, still }.
-    // state is 'waiting', 'exercising', 'resting', 'still' (not moving for a while),
+    // state is 'waiting', 'exercising', 'resting', 'still' (not moving for a while), 'away' (out of frame),
     // 'done' or 'danger'. The label is a few words for the block.
     condition(real) {
       const danger = this.dangers(real);
@@ -299,6 +359,10 @@
       } else if (this.complete()) {
         state = 'done';
         label = 'Finished';
+      } else if (this.awayFor(real) >= LIMITS.awaySeconds) {
+        // Out of the camera's view: worth a look, but not an emergency.
+        state = 'away';
+        label = `Out of frame for ${fmtDuration(this.awayFor(real))}`;
       } else if (still != null && still >= stillLimit) {
         state = 'still';
         label = `Not moving for ${fmtDuration(still)}`;
@@ -382,6 +446,7 @@
         setsDone: setsDone(r),
         success: r.success,
         color: this.exercisePerformance(this.ex),
+        quality: r.quality == null ? null : Math.round(r.quality), // the score shown beside the progress wheel
       };
     }
 
@@ -430,6 +495,16 @@
           cue: finished ? 'That’s the whole workout. Time to stop and rest.' : 'This exercise is finished. Rest, then move on.',
         });
       }
+      // The camera keeps seeing a different exercise from the one in the workout.
+      const wrong = this.wrongReps.filter((w) => this.seconds(w.at, now) <= LIMITS.wrongHoldSeconds);
+      if (!finished && wrong.length >= LIMITS.errorReps) {
+        const seen = CC.exerciseName(wrong[wrong.length - 1].exercise);
+        const want = CC.exerciseName(this.expectedExercise(now));
+        list.push({
+          message: `${seen} seen, but the workout is on ${want.toLowerCase()}: not counted`,
+          cue: `This part of the workout is ${want.toLowerCase()}.`,
+        });
+      }
       if (this.seconds(this.faultsAt, now) <= LIMITS.faultHoldSeconds) {
         // A fault is only shown once it has been seen on at least errorReps reps of this exercise.
         for (const code of this.currentFaults.filter((c) => (e.faults[c] || 0) >= LIMITS.errorReps)) {
@@ -437,12 +512,18 @@
           list.push({ message: f.message, cue: f.cue });
         }
       }
+      // A fall the camera saw, but they are still moving: not an emergency, but worth a look.
+      const r = real == null ? now : real;
+      if (this.posture === 'fallen' && !this.dangers(r).length) {
+        list.unshift({ message: 'Possible fall seen: keep an eye on them', cue: 'Take your time getting up. Your instructor is watching.' });
+      }
       if (!finished) {
         const idle = this.seconds(this.lastRepAt, now);
         const allowed = this.reps && this.setFinished() ? this.restSeconds() + LIMITS.idleSeconds : LIMITS.idleSeconds;
         // With movement levels from the camera, say when they've stopped moving altogether.
         const cond = this.condition(real == null ? now : real);
-        if (cond.state === 'still') list.push({ message: cond.label, cue: 'Is everything OK? Carry on when you’re ready.' });
+        if (cond.state === 'away') list.push({ message: cond.label, cue: 'Step back into the camera view, side-on, whole body.' });
+        else if (cond.state === 'still') list.push({ message: cond.label, cue: 'Is everything OK? Carry on when you’re ready.' });
         else if (idle >= allowed) list.push({ message: `No reps for ${fmtDuration(idle)}`, cue: 'Carry on when you’re ready.' });
       }
       return list;
@@ -538,6 +619,8 @@
         exercisesPlanned: this.plan.length,
         exercises,
         repsDone: this.reps,
+        repsIgnored: this.ignoredReps, // reps of an exercise the workout was not on (not counted)
+        repsDuringRest: this.restReps, // rep-like movement during rests (not counted)
         repsPlanned: exercises.reduce((n, e) => n + planned(e), 0),
         setsDone: exercises.reduce((n, e) => n + setsDone(e), 0),
         setsPlanned: exercises.reduce((n, e) => n + e.sets, 0),

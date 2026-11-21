@@ -157,12 +157,14 @@
       nameEl,
       condEl,
       h('div', { class: 'wheels' },
-        h('div', { class: 'wheel wheel-ex', title: 'This exercise' },
-          exWheel.el, h('div', { class: 'wheel-text' }, exPct, setText, repText)),
+        // Big wheel: progress through the current set. Small wheel: the score (how well
+        // this exercise's reps were done), coloured red to green, so both show at a glance.
+        h('div', { class: 'wheel wheel-ex wheel-progress', title: 'Progress through this set' },
+          exWheel.el, h('div', { class: 'wheel-text' }, exPct, repText, setText)),
         h('div', { class: 'wheel-side' },
-          h('div', { class: 'wheel wheel-session', title: 'Whole session' },
+          h('div', { class: 'wheel wheel-session', title: 'Score: how well this exercise’s reps were done' },
             sessionWheel.el, h('div', { class: 'wheel-text' }, sessionPct)),
-          h('span', { class: 'wheel-side-label' }, 'session'),
+          h('span', { class: 'wheel-side-label' }, 'score'),
           sessionSets)),
       exName,
       h('dl', { class: 'block-stats' },
@@ -171,15 +173,17 @@
       exList,
       issues);
 
-    const unit = (code) => (CC.timed(code) ? 's' : ' reps');
-
     // The current exercise: its name, the set it's on and the reps done in that set.
     function renderCurrent(now) {
-      exWheel.set(now.success, now.color);
-      exPct.textContent = now.success + '%';
+      // Progress: reps done in this set out of the reps planned.
+      exWheel.set(now.reps ? (100 * now.inSet) / now.reps : 0, null);
+      exPct.textContent = `${now.inSet}/${now.reps}`;
       exName.textContent = CC.exerciseName(now.exercise);
       setText.textContent = `set ${now.set} of ${now.sets}`;
-      repText.textContent = `${now.inSet}/${now.reps}${unit(now.exercise)}` + (now.extra ? ` +${now.extra}` : '');
+      repText.textContent = (CC.timed(now.exercise) ? 'seconds' : 'reps') + (now.extra ? ` +${now.extra} over` : '');
+      // Score: the average rep score of this exercise so far.
+      sessionWheel.set(now.quality == null ? 0 : now.quality, now.quality);
+      sessionPct.textContent = now.quality == null ? '—' : now.quality + '%';
     }
 
     let exKey = '';
@@ -234,9 +238,8 @@
     renderExercises(slot.workout.map((w, i) => ({
       exercise: w.exercise, sets: w.sets, reps: w.reps, setsDone: 0, success: 0, current: i === 0,
     })));
-    renderCurrent({ exercise: first.exercise, sets: first.sets, reps: first.reps, set: 1, inSet: 0, extra: 0, success: 0, color: null });
-    sessionWheel.set(0, null);
-    sessionSets.textContent = `0/${slot.workout.reduce((n, w) => n + w.sets, 0)} sets`;
+    renderCurrent({ exercise: first.exercise, sets: first.sets, reps: first.reps, set: 1, inSet: 0, extra: 0, success: 0, color: null, quality: null });
+    sessionSets.textContent = `0/${slot.workout.reduce((n, w) => n + w.sets, 0)} sets total`;
 
     return {
       el,
@@ -246,9 +249,7 @@
         el.classList.toggle('has-camera', !!on);
       },
       update(snap) {
-        sessionWheel.set(snap.success, snap.color === undefined ? null : snap.color);
-        sessionPct.textContent = snap.success + '%';
-        sessionSets.textContent = `${snap.setsDone || 0}/${snap.setsPlanned} sets`;
+        sessionSets.textContent = `${snap.setsDone || 0}/${snap.setsPlanned} sets total`;
         if (snap.now) renderCurrent(snap.now);
         quality.textContent = snap.quality == null ? '—' : snap.quality + '%';
         exertion.textContent = snap.exertion == null ? '—' : fmtExertion(snap.exertion) + '/10';

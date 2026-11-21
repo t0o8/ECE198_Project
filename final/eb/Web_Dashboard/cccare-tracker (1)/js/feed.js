@@ -31,6 +31,7 @@
     upright: 'upright', standing: 'upright', sitting: 'upright', kneeling: 'upright',
     floor: 'floor', lying: 'floor',
     fallen: 'fallen', fall: 'fallen',
+    away: 'away', out_of_frame: 'away', gone: 'away', // nobody in the camera's view
   };
 
   function normalize(raw) {
@@ -123,7 +124,8 @@
       const w = p.plan[Math.min(p.ex, p.plan.length - 1)];
       let level;
       if (p.state === 'incident') {
-        level = p.incident.kind === 'faint' ? rnd() * 0.02 : p.incident.kind === 'fall' ? 0.08 + rnd() * 0.12 : 0.1 + rnd() * 0.1;
+        // A simulated fall lies nearly still, so it shows the alert (which needs stillness).
+        level = p.incident.kind === 'faint' ? rnd() * 0.02 : p.incident.kind === 'fall' ? rnd() * 0.04 : 0.1 + rnd() * 0.1;
       } else if (p.state === 'work') {
         level = 0.5 + rnd() * 0.4;
       } else {

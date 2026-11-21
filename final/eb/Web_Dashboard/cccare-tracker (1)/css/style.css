@@ -466,6 +466,9 @@ select option { background: var(--paper); color: var(--ink); }
 .wheels { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 14px 14px 4px; }
 .wheels .wheel { margin: 0; }
 .wheel-side { display: grid; justify-items: center; gap: 3px; }
+/* The big wheel is progress through the set: one plain colour, so it isn't read as a score. */
+.wheel-progress .ring-arc { stroke: var(--ink) !important; }
+.wheel-side-label { font-weight: 700; }
 .wheel-session .wheel-pct { font-size: 13px; }
 .wheel-side-label { font: 10px/1.2 var(--mono); color: var(--muted); }
 .wheel-side-sets { font: 10px/1.2 var(--mono); color: var(--ink); white-space: nowrap; }
@@ -845,6 +848,7 @@ select option { background: var(--paper); color: var(--ink); }
 .block-cond::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; background: currentColor; vertical-align: 1px; }
 .cond-exercising { color: var(--ink); }
 .cond-still { color: var(--red); font-weight: 700; }
+.cond-away { color: var(--red); font-weight: 700; }
 .cond-danger { color: var(--red); font-weight: 700; }
 .block-large .block-cond { padding: 4px 22px 0; font-size: 14px; }
 
