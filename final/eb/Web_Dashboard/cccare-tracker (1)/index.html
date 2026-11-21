@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · CCCARE exercise tracking</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23111'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/motion.js"></script>
+  <script src="js/theme.js"></script>
+</head>
+<body>
+  <header class="top">
+    <span class="brand">CCCARE <span class="brand-sub">exercise tracking</span></span>
+  </header>
+
+  <main class="signin">
+    <h1 id="page-title">Sign in</h1>
+
+    <form class="signin-form" id="signin" novalidate>
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <p class="form-error" id="error" role="alert"></p>
+      <button class="btn" type="submit">Sign in</button>
+    </form>
+
+    <form class="signin-form" id="signup" novalidate hidden>
+      <label for="new-username">Choose a username</label>
+      <input id="new-username" name="username" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" maxlength="24" required>
+      <label for="new-password">Password</label>
+      <input id="new-password" name="password" type="password" autocomplete="new-password" required>
+      <label for="new-confirm">Password again</label>
+      <input id="new-confirm" name="confirm" type="password" autocomplete="new-password" required>
+      <fieldset class="roles">
+        <legend>This account is for</legend>
+        <label class="role"><input type="radio" name="role" value="instructor"><span>Instructor</span></label>
+        <label class="role"><input type="radio" name="role" value="patient"><span>Patient</span></label>
+      </fieldset>
+      <p class="form-error" id="signup-error" role="alert"></p>
+      <button class="btn" type="submit">Create account</button>
+    </form>
+
+    <p class="switch" id="switch">
+      <span id="switch-text">First time here?</span>
+      <button type="button" class="btn btn-light" id="switch-btn">Sign up</button>
+    </p>
+
+    <p class="signin-note mono" id="already" hidden></p>
+  </main>
+
+  <footer class="foot mono">
+    <p>Sample accounts: instructor InsU / InsP, patient PatU / PatP.</p>
+  </footer>
+
+  <script src="js/config.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/exercises.js"></script>
+  <script src="js/score.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/pages/signin.js"></script>
+</body>
+</html>

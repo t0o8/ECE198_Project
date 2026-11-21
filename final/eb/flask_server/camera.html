@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CCCARE camera</title>
+  <style>
+    body { margin: 0; padding: 20px; font: 15px/1.45 "Helvetica Neue", Helvetica, Arial, sans-serif; background: #111; color: #eee; }
+    h1 { font-size: 20px; margin: 0 0 12px; }
+    img { display: block; max-width: 100%; border-radius: 8px; background: #000; min-height: 240px; }
+    .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+    button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 0; cursor: pointer; }
+    #clear { background: #c62828; color: #fff; }
+    .pill { padding: 4px 10px; border-radius: 999px; background: #333; }
+    .red { background: #c62828; } .green { background: #2e7d32; }
+    a { color: #8ab4f8; }
+    #err { color: #ff8a80; }
+  </style>
+</head>
+<body>
+  <h1>Camera view</h1>
+  <img id="video" alt="Annotated camera picture">
+  <div class="bar">
+    <span class="pill" id="safety">…</span>
+    <span class="pill" id="exercise">…</span>
+    <span class="pill" id="pid">…</span>
+    <span class="pill" id="clients">…</span>
+    <button id="clear">Coach checked: clear alert</button>
+    <button id="reset">Reset counts</button>
+    <a href="/instructor.html">Open the instructor dashboard</a>
+  </div>
+  <p id="err"></p>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const post = (a) => fetch('/camera/' + a, { method: 'POST' }).then(poll);
+    $('clear').onclick = () => post('clear');
+    $('reset').onclick = () => post('reset');
+
+    // The picture is one long MJPEG request. It breaks when app.py restarts or the camera
+    // stops, and an <img> never retries by itself, so reconnect it: on an error, and
+    // whenever the server comes back or the camera starts running again.
+    const video = $('video');
+    let wasOk = false;
+    let retry = null;
+    function connectVideo() {
+      clearTimeout(retry);
+      retry = null;
+      video.src = '/camera/stream?t=' + Date.now(); // a new address, so the browser really reconnects
+    }
+    video.onerror = () => {
+      if (!retry) retry = setTimeout(connectVideo, 1000);
+    };
+
+    async function poll() {
+      try {
+        const s = await (await fetch('/camera/status')).json();
+        const ok = !!s.running;
+        if (ok && !wasOk) connectVideo();
+        wasOk = ok;
+        $('safety').textContent = 'Safety: ' + (s.alert ? 'CHECK – ' + s.alert : s.safety === 'gone' ? 'no person' : s.safety === 'red' ? 'CHECK' : 'OK');
+        $('safety').className = 'pill ' + (s.safety === 'red' ? 'red' : s.safety === 'green' ? 'green' : '');
+        $('exercise').textContent = 'Exercise: ' + (s.exercise || 'detecting…') + (s.fps ? `  (${s.fps} fps)` : '');
+        $('pid').textContent = 'Reports as ' + s.pid;
+        $('clients').textContent = s.clients + ' dashboard' + (s.clients === 1 ? '' : 's') + ' connected';
+        $('err').textContent = s.error ? 'Camera stopped: ' + s.error : '';
+      } catch (e) {
+        wasOk = false; // server down: reconnect the picture when it answers again
+        $('err').textContent = 'The server is not answering. Is app.py running?';
+      }
+    }
+    poll();
+    setInterval(poll, 1000);
+  </script>
+</body>
+</html>
