@@ -32,7 +32,7 @@ from recognizer import ExerciseRecognizer
 # Camera index. On a Mac, 0 may be your iPhone (Continuity Camera).
 # Run find_cameras.py to see which number is the laptop webcam.
 # Later (Phase 2): "http://<ESP32-IP>:81/stream"
-CAMERA_SOURCE = 0
+CAMERA_SOURCE = "http://192.168.1.72:81/stream"
 
 FEEDBACK_SECONDS = 1.5   # how long the GOOD/BAD message stays on screen
 LOOKBACK_SECONDS = 4.0   # reps finished just before recognition still count
@@ -428,6 +428,8 @@ def main():
                 break
 
             frame = cv2.flip(frame, 1)
+            if frame.shape[1] < 640:
+                frame = cv2.resize(frame, (640, frame.shape[0] * 640 // frame.shape[1]))
             height, width = frame.shape[:2]
             now = time.monotonic()
 

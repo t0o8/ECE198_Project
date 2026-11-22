@@ -2,8 +2,8 @@
 #include "esp_camera.h"
 
 namespace WifiConstants {
-    const char* SSID = "My iPhone";
-    const char* PASSWORD = "wodeiphone";
+    const char* SSID = "CIK1000M_AC2.4G_6946";
+    const char* PASSWORD = "d0608c040e34";
 };
 
 namespace CameraConstants {
@@ -35,9 +35,9 @@ namespace CameraConstants {
         .frame_size = FRAMESIZE_QVGA,
 
         .jpeg_quality = 12,
-        .fb_count = 1,
+        .fb_count = 2,
         .fb_location = CAMERA_FB_IN_PSRAM,
-        .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
+        .grab_mode = CAMERA_GRAB_LATEST,
     };
     const int QUALITY = 80;
 };
