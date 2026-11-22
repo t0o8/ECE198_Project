@@ -35,7 +35,7 @@ from safety import SafetyMonitor
 # ============================================================
 
 # Computer camera index. On a Mac, 0 may be your iPhone; run find_cameras.py.
-CAMERA_SOURCE = 0
+CAMERA_SOURCE = "http://172.20.10.8:81/stream"
 
 
 FEEDBACK_SECONDS = 1.5   # how long the GOOD/BAD message stays on screen
@@ -209,6 +209,9 @@ def main():
         base_options=mp_python.BaseOptions(model_asset_path=MODEL_PATH),
         running_mode=vision.RunningMode.VIDEO,
         num_poses=1,
+        min_pose_detection_confidence=0.3,  # finding a person in the first place
+            min_pose_presence_confidence=0.3,   # deciding a pose is still in frame
+    min_tracking_confidence=0.3,
     )
 
     counters = make_counters()        # one counter per exercise
