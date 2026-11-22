@@ -4,50 +4,69 @@
 #include "Constants.h"
 #include "esp_http_server.h"
 
+#define PART_BOUNDARY "123456789000000000000987654321"
+static const char *STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
+static const char *STREAM_PART = "\r\n\
+--" PART_BOUNDARY "\r\n\
+Content-Type: image/jpeg\r\n\
+Content-Length: %u\r\n\
+\r\n";
+
 httpd_handle_t server_handle = NULL;
-
-static esp_err_t stream_handler(httpd_req_t *req) {
-  esp_err_t result = ESP_OK;
-  result = httpd_resp_set_type(req, "multipart/x-mixed-replace;boundary=123456789000000000000987654321");
-
-  if (result != ESP_OK) {return result;}
-
-  while (true) {
-    uint8_t *buffer{nullptr};
-    size_t size{0};
-
-    GetJPEGImage(buffer, size);
-    char str_buf[64];
-    size_t hlen = snprintf(str_buf, 64, "\r\n--123456789000000000000987654321\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", size);
-    result = httpd_resp_send_chunk(req, (const char *)str_buf, hlen);
-    if (result != ESP_OK) {return result;}
-    result = httpd_resp_send_chunk(req, (const char *)buffer, size);
-
-    if(result != ESP_OK) break;
-  }
-  return result;
-}
-
 esp_err_t GetJPEGImage(uint8_t *&buffer, size_t &size) {
   camera_fb_t *frame_buffer = esp_camera_fb_get();
   if (!frame_buffer) {
     return ESP_FAIL;
   }
   bool convert_success = fmt2jpg(frame_buffer->buf, frame_buffer->len, frame_buffer->width, frame_buffer->height, frame_buffer->format, CameraConstants::QUALITY, &buffer, &size);
-  if (convert_success != true) {
+  
+  esp_camera_fb_return(frame_buffer);
+
+  if (!convert_success) {
     Serial.println("Conversion Failed");
     return ESP_FAIL;
   }
 
-  esp_camera_fb_return(frame_buffer);
   return ESP_OK;
 }
+
+static esp_err_t stream_handler(httpd_req_t *req) {
+  esp_err_t result = ESP_OK;
+  result = httpd_resp_set_type(req, STREAM_CONTENT_TYPE);
+
+  if (result != ESP_OK) {
+    return result;
+  }
+
+  while (true) {
+    uint8_t *buffer{nullptr};
+    size_t size{0};
+    if (GetJPEGImage(buffer, size) != ESP_OK) {
+      Serial.println("Skipping bad frame...");
+      delay(50);
+      continue; 
+    }
+    char str_buf[128];
+    size_t hlen = snprintf(str_buf, sizeof(str_buf), STREAM_PART, size);
+    result = httpd_resp_send_chunk(req, (const char *)str_buf, hlen);
+    if (result != ESP_OK) {
+      free(buffer);
+      return result;
+    }
+    result = httpd_resp_send_chunk(req, (const char *)buffer, size);
+    free(buffer);
+
+    if(result != ESP_OK) break;
+  }
+  return result;
+}
+
 
 void setup() {
   Serial.begin(115200);
   Serial.println("Starting ESP-32");
 
-  if (!esp_camera_init(&CameraConstants::CONFIG)) {
+  if (esp_camera_init(&CameraConstants::CONFIG) != ESP_OK) {
     Serial.println("Camera initilization failed");
     return;
   } else {
@@ -55,7 +74,8 @@ void setup() {
   }
 
   WiFi.begin(WifiConstants::SSID, WifiConstants::PASSWORD);
-
+  WiFi.setSleep(false);
+  
   if (WiFi.status() == WL_NO_SHIELD) {
     Serial.println("Shield Missing");
   }
@@ -87,7 +107,6 @@ void setup() {
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  
+  delay(10000);
   
 }
