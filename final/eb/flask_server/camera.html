@@ -62,7 +62,7 @@
         $('exercise').textContent = 'Exercise: ' + (s.exercise || 'detecting…') + (s.fps ? `  (${s.fps} fps)` : '');
         $('pid').textContent = 'Reports as ' + s.pid;
         $('clients').textContent = s.clients + ' dashboard' + (s.clients === 1 ? '' : 's') + ' connected';
-        $('err').textContent = s.error ? 'Camera stopped: ' + s.error : '';
+        $('err').textContent = s.error ? 'Camera stopped: ' + s.error : (s.waiting || '');
       } catch (e) {
         wasOk = false; // server down: reconnect the picture when it answers again
         $('err').textContent = 'The server is not answering. Is app.py running?';

@@ -3,6 +3,7 @@ Flask server that joins the MediaPipe exercise tracker to the CCCARE web dashboa
 
     python app.py                      then open http://localhost:8000
     python app.py --camera 1           use another camera (see find_cameras.py)
+    python app.py --camera http://192.168.1.50:81/stream   use an ESP32 camera over Wi-Fi
     python app.py --pid P03            the camera's person is block P03
     python app.py --model heavy        more accurate pose model (slower; downloads ~30 MB once)
     python app.py --host 0.0.0.0       let other devices on the network connect
@@ -179,7 +180,9 @@ def main():
     ap.add_argument('--host', default='127.0.0.1')
     # Not 5000: on macOS the AirPlay Receiver already uses port 5000 and answers 403.
     ap.add_argument('--port', type=int, default=8000)
-    ap.add_argument('--camera', type=int, default=0, help='camera index (run find_cameras.py)')
+    ap.add_argument('--camera', default='0',
+                    help='computer camera number (run find_cameras.py), or an ESP32 stream address '
+                         'such as http://192.168.1.50:81/stream')
     ap.add_argument('--model', choices=['full', 'heavy'], default='full',
                     help='pose model: full (default) or heavy (more accurate, slower)')
     ap.add_argument('--pid', default=None, help='block the camera watches, e.g. P01 (default: first in the session)')
@@ -188,7 +191,8 @@ def main():
     args = ap.parse_args()
 
     dashboard_api.Handler.store = dashboard_api.Store(args.data, not args.no_sample_accounts)
-    pipeline = CameraPipeline(args.camera, args.pid, args.model)
+    camera = args.camera if args.camera.startswith(('http://', 'https://')) else int(args.camera)
+    pipeline = CameraPipeline(camera, args.pid, args.model)
     # Open the camera here, on the main thread: on macOS that is the only place OpenCV can
     # ask for camera permission. The tracking itself then runs in a background thread.
     print(f'Opening camera {args.camera}...', flush=True)

@@ -90,7 +90,10 @@ void setup() {
   }
   Serial.println("");
   Serial.println("Wifi-Connected");
-  Serial.println("Camera IP: " + WiFi.localIP());
+  // (Was: Serial.println("Camera IP: " + WiFi.localIP()); in C++ that adds the IP as a number to
+  // the text's memory address and prints whatever memory is there, which can crash.)
+  Serial.print("Camera IP: ");
+  Serial.println(WiFi.localIP());
  
   httpd_config_t server_config = HTTPD_DEFAULT_CONFIG();
   server_config.server_port = 81;

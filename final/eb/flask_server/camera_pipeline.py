@@ -408,8 +408,9 @@ class CameraPipeline:
             camera = open_source(self.camera_index)
         if not camera.is_open():
             raise RuntimeError(
-                f'Could not open camera {self.camera_index}. On a Mac allow camera access for the app '
-                'running Python (System Settings > Privacy & Security > Camera), or try another --camera index.')
+                f'Could not open camera {self.camera_index}. For an ESP32, check it is on the same Wi-Fi '
+                'and the address is right (open it in a browser). For a computer camera on a Mac, allow '
+                'camera access for the app running Python (System Settings > Privacy & Security > Camera).')
 
         options = vision.PoseLandmarkerOptions(
             base_options=mp_python.BaseOptions(model_asset_path=model_path),
@@ -458,9 +459,16 @@ class CameraPipeline:
 
                     frame_id, frame = camera.read(frame_id)
                     if frame is None:
+                        if getattr(camera, 'network', False):
+                            # ESP32 off or Wi-Fi down: the reader keeps reconnecting, so wait.
+                            self.status = dict(self.status, safety='gone', exercise=None,
+                                               waiting='Waiting for the ESP32 camera...')
+                            continue
                         raise RuntimeError('No picture from the camera.')
+                    self.status.pop('waiting', None)
 
-                    frame = cv2.flip(frame, 1)
+                    if not getattr(camera, 'network', False):
+                        frame = cv2.flip(frame, 1)  # mirror the computer camera, like a mirror
                     height, width = frame.shape[:2]
                     now = time.monotonic()
 

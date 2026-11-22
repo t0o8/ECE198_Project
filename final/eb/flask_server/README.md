@@ -15,6 +15,18 @@ cd eb/flask_server
 - Dashboard: <http://localhost:8000> (sign in as `InsU` / `InsP`)
 - Camera view, with the safety "clear alert" button: <http://localhost:8000/camera>
 
+**Using an ESP32 camera instead of the laptop camera:** put the ESP32 on the same Wi-Fi, then
+
+```
+python app.py --camera http://<esp32-ip>:81/stream
+```
+
+Any camera that streams MJPEG over HTTP works (the standard ESP32 `CameraWebServer` serves it at
+port 81, `/stream`). The tracker always uses the newest picture, so a slow Wi-Fi link drops
+frames rather than falling behind, and if the ESP32 restarts or Wi-Fi drops, it reconnects by
+itself (the camera page says "Waiting for the ESP32 camera..." meanwhile). The ESP32's picture
+is not mirrored, unlike the laptop camera's. Check the address first by opening it in a browser.
+
 Options: `--camera 1` (another camera index), `--pid P03` (which block the camera's person is;
 default is the first participant of the session), `--host 0.0.0.0` (other devices on the network).
 
