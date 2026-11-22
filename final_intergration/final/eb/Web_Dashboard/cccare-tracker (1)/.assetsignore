@@ -1,0 +1,5 @@
+# Files in the dashboard folder that Cloudflare shouldn't publish as part of the website.
+server/
+tools/
+.gitignore
+.assetsignore

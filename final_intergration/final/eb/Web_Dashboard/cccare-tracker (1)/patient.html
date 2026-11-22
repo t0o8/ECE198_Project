@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your session · CCCARE exercise tracking</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23111'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/motion.js"></script>
+  <script src="js/theme.js"></script>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="patient.html">CCCARE <span class="brand-sub">exercise tracking</span></a>
+    <p class="who"><span class="mono" data-who></span><a href="index.html" data-signout>Sign out</a></p>
+  </header>
+
+  <main class="patient">
+    <section class="patient-head">
+      <p class="mono muted" data-today></p>
+      <h1 id="name"></h1>
+      <p class="plan" id="plan"></p>
+    </section>
+
+    <div id="slot"></div>
+
+    <aside class="patient-side">
+      <p class="patient-state" id="state" aria-live="polite">Waiting for your instructor to start the session.</p>
+      <p class="muted" id="note">Your session starts on its own when your instructor starts the class. The camera counts your reps and checks your form as you go.</p>
+      <p id="last"></p>
+    </aside>
+  </main>
+
+  <footer class="foot mono">
+    <p>Prototype. Your screen follows the instructor’s session in this browser.</p>
+  </footer>
+
+  <script src="js/config.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/exercises.js"></script>
+  <script src="js/score.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/pages/patient.js"></script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Profile · CCCARE exercise tracking</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23111'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/motion.js"></script>
+  <script src="js/theme.js"></script>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="index.html" id="home">CCCARE <span class="brand-sub">exercise tracking</span></a>
+    <p class="who"><span class="mono" data-who></span><a href="index.html" data-signout>Sign out</a></p>
+  </header>
+
+  <main class="profile">
+    <nav class="crumbs mono"><a href="index.html" id="back">Back</a></nav>
+
+    <section class="profile-card" aria-label="Your profile">
+      <div id="card-photo"></div>
+      <div>
+        <h1 id="card-name"></h1>
+        <p class="mono muted" id="card-meta"></p>
+        <p class="profile-bio" id="card-bio"></p>
+      </div>
+    </section>
+
+    <form class="profile-form" id="profile" novalidate>
+      <h2>Edit profile</h2>
+
+      <span class="field-label" id="photo-label">Profile picture</span>
+      <div class="photo-row" role="group" aria-labelledby="photo-label">
+        <!-- The file box is hidden but still focusable; the paperclip is its label. -->
+        <input id="photo" name="photo" type="file" class="sr-only" accept="image/png,image/jpeg,image/webp,image/gif">
+        <label for="photo" class="icon-btn photo-btn" title="Choose a picture file">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          <span class="sr-only">Choose a picture file</span>
+        </label>
+        <button type="button" class="icon-btn photo-btn" id="take-photo" title="Take a picture with the camera">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span class="sr-only">Take a picture with the camera</span>
+        </button>
+        <span class="mono muted" id="photo-hint">Choose a file or take a picture</span>
+        <button type="button" class="btn btn-light" id="remove-photo">Remove picture</button>
+      </div>
+
+      <div class="camera" id="camera" hidden>
+        <div class="camera-frame">
+          <video id="camera-video" playsinline muted autoplay aria-label="Camera preview"></video>
+        </div>
+        <p class="mono muted">The square in the middle becomes your picture.</p>
+        <div class="camera-actions">
+          <button type="button" class="btn" id="capture">Take picture</button>
+          <button type="button" class="btn btn-light" id="camera-cancel">Cancel</button>
+        </div>
+      </div>
+
+      <label for="nickname">Nickname</label>
+      <input id="nickname" name="nickname" type="text" maxlength="30" autocomplete="nickname" spellcheck="false" placeholder="What should we call you?">
+      <p class="mono muted field-note">Shown on your screens instead of your username, and used in the encouraging messages during a session.</p>
+
+      <label for="birthday">Birthday</label>
+      <input id="birthday" name="birthday" type="date">
+
+      <label for="bio">Biography</label>
+      <textarea id="bio" name="bio" rows="5" maxlength="500"></textarea>
+      <p class="mono muted" id="bio-count"></p>
+
+      <p class="form-error" id="error" role="alert"></p>
+      <div class="profile-actions">
+        <button class="btn" type="submit">Save profile</button>
+        <span class="mono" id="saved" role="status"></span>
+      </div>
+    </form>
+  </main>
+
+  <footer class="foot mono">
+    <p>Prototype. Your profile is saved in this browser only.</p>
+  </footer>
+
+  <script src="js/config.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/exercises.js"></script>
+  <script src="js/score.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/pages/profile.js"></script>
+</body>
+</html>
